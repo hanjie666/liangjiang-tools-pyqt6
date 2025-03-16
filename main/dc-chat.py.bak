@@ -54,6 +54,24 @@ class Ui_Form(QWidget):
             self.config_file = os.path.join(os.getcwd(), 'dc_chat_config.json')
             print(f"使用当前目录的dc_chat_config.json: {self.config_file}")
         
+        # 如果配置文件不存在，尝试其他可能的路径
+        if not os.path.exists(self.config_file):
+            # 如果是打包后的应用
+            if getattr(sys, 'frozen', False):
+                # 尝试从Resources目录加载
+                if sys.platform == 'darwin':
+                    # macOS应用程序包
+                    executable_dir = os.path.dirname(sys.executable)
+                    if 'Contents/MacOS' in executable_dir:
+                        resources_dir = os.path.join(os.path.dirname(os.path.dirname(executable_dir)), 'Resources')
+                        self.config_file = os.path.join(resources_dir, 'main', 'dc_chat_config.json')
+                        print(f"尝试从Resources目录加载dc_chat_config.json: {self.config_file}")
+        
+        # 如果仍然找不到文件，使用当前目录
+        if not os.path.exists(self.config_file):
+            self.config_file = os.path.join(os.getcwd(), 'dc_chat_config.json')
+            print(f"使用当前目录的dc_chat_config.json: {self.config_file}")
+        
         # 加载保存的配置
         self.load_config()
         

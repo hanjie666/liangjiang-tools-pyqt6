@@ -12,7 +12,9 @@ import pymysql
 from datetime import datetime
 
 from PyQt6 import QtCore, QtGui, QtWidgets
-from PyQt6.QtWidgets import QWidget, QMessageBox
+from PyQt6.QtWidgets import QWidget, QMessageBox, QGridLayout, QVBoxLayout, QHBoxLayout, QFrame
+from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QIcon, QPixmap, QFont, QColor
 
 class Ui_LoginForm(QWidget):
     def __init__(self):
@@ -21,6 +23,9 @@ class Ui_LoginForm(QWidget):
         
         # 设置窗口标题
         self.setWindowTitle("良匠工具箱 - 登录")
+        
+        # 设置窗口图标（如果存在）
+        self.set_window_icon()
         
         # 根据平台调整样式
         self.adjust_platform_style()
@@ -74,26 +79,34 @@ class Ui_LoginForm(QWidget):
             self.config_file = os.path.join(os.getcwd(), 'config.json')
             print(f"使用当前目录的config.json: {self.config_file}")
         
-        # 如果配置文件不存在，尝试其他可能的路径
-        if not os.path.exists(self.config_file):
-            # 如果是打包后的应用
-            if getattr(sys, 'frozen', False):
-                # 尝试从Resources目录加载
-                if sys.platform == 'darwin':
-                    # macOS应用程序包
-                    executable_dir = os.path.dirname(sys.executable)
-                    if 'Contents/MacOS' in executable_dir:
-                        resources_dir = os.path.join(os.path.dirname(os.path.dirname(executable_dir)), 'Resources')
-                        self.config_file = os.path.join(resources_dir, 'main', 'config.json')
-                        print(f"尝试从Resources目录加载config.json: {self.config_file}")
-        
-        # 如果仍然找不到文件，使用当前目录
-        if not os.path.exists(self.config_file):
-            self.config_file = os.path.join(os.getcwd(), 'config.json')
-            print(f"使用当前目录的config.json: {self.config_file}")
-        
         # 检查是否有保存的卡密
         self.check_saved_password()
+    
+    def set_window_icon(self):
+        """设置窗口图标"""
+        # 尝试查找图标文件
+        icon_paths = [
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'app_icon.png'),
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'app_icon.ico'),
+            'app_icon.png',
+            'app_icon.ico'
+        ]
+        
+        # 如果是打包后的应用
+        if getattr(sys, 'frozen', False):
+            if sys.platform == 'darwin':
+                # macOS应用程序包
+                executable_dir = os.path.dirname(sys.executable)
+                if 'Contents/MacOS' in executable_dir:
+                    resources_dir = os.path.join(os.path.dirname(os.path.dirname(executable_dir)), 'Resources')
+                    icon_paths.append(os.path.join(resources_dir, 'app_icon.png'))
+                    icon_paths.append(os.path.join(resources_dir, 'app_icon.icns'))
+        
+        # 尝试设置图标
+        for icon_path in icon_paths:
+            if os.path.exists(icon_path):
+                self.setWindowIcon(QIcon(icon_path))
+                break
     
     def center_on_screen(self):
         """将窗口居中显示在屏幕上"""
@@ -106,7 +119,10 @@ class Ui_LoginForm(QWidget):
     def adjust_platform_style(self):
         """根据平台调整样式，使其在不同平台上保持一致"""
         # 设置窗口固定大小
-        self.setFixedSize(448, 128)
+        if sys.platform == 'darwin':  # macOS
+            self.setFixedSize(480, 200)
+        else:  # Windows 和其他平台
+            self.setFixedSize(450, 180)
         
         # 设置应用程序样式表
         style_sheet = """
@@ -114,6 +130,7 @@ class Ui_LoginForm(QWidget):
             font-family: 'Microsoft YaHei', 'Segoe UI', 'Helvetica', sans-serif;
             font-size: 10pt;
             color: #333333;
+            background-color: #f5f5f7;
         }
         
         QPushButton {
@@ -121,7 +138,9 @@ class Ui_LoginForm(QWidget):
             color: white;
             border: none;
             border-radius: 4px;
-            padding: 6px 12px;
+            padding: 8px 16px;
+            font-weight: bold;
+            min-width: 80px;
         }
         
         QPushButton:hover {
@@ -135,16 +154,35 @@ class Ui_LoginForm(QWidget):
         QLineEdit {
             border: 1px solid #cccccc;
             border-radius: 4px;
-            padding: 6px;
+            padding: 8px;
             background-color: white;
+            selection-background-color: #4CAF50;
+            selection-color: white;
         }
         
         QLineEdit:focus {
             border: 1px solid #4CAF50;
+            box-shadow: 0 0 3px #4CAF50;
         }
         
         QLabel {
             color: #333333;
+        }
+        
+        QLabel#titleLabel {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        QFrame#headerFrame {
+            background-color: #ffffff;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        QFrame#contentFrame {
+            background-color: #ffffff;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
         }
         """
         
@@ -157,7 +195,17 @@ class Ui_LoginForm(QWidget):
             }
             
             QPushButton {
-                min-height: 30px;
+                min-height: 32px;
+                font-size: 13pt;
+            }
+            
+            QLineEdit {
+                min-height: 28px;
+                font-size: 13pt;
+            }
+            
+            QLabel#titleLabel {
+                font-size: 24pt;
             }
             """
         elif sys.platform == 'win32':  # Windows
@@ -167,48 +215,106 @@ class Ui_LoginForm(QWidget):
                 font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
                 font-size: 10pt;
             }
+            
+            QPushButton {
+                min-height: 28px;
+            }
+            
+            QLineEdit {
+                min-height: 24px;
+            }
+            
+            QLabel#titleLabel {
+                font-size: 22pt;
+                font-family: 'Segoe UI Light', 'Microsoft YaHei UI Light', sans-serif;
+            }
             """
         
         # 应用样式表
         self.setStyleSheet(style_sheet)
 
     def setupUi(self, LoginForm):
-        LoginForm.setObjectName("LoginForm")
-        LoginForm.resize(448, 128)
-        self.formLayoutWidget = QtWidgets.QWidget(parent=LoginForm)
-        self.formLayoutWidget.setGeometry(QtCore.QRect(40, 60, 301, 42))
-        self.formLayoutWidget.setObjectName("formLayoutWidget")
-        self.formLayout = QtWidgets.QFormLayout(self.formLayoutWidget)
-        self.formLayout.setContentsMargins(10, 10, 10, 10)
-        self.formLayout.setObjectName("formLayout")
-        self.label = QtWidgets.QLabel(parent=self.formLayoutWidget)
-        self.label.setObjectName("label")
-        self.formLayout.setWidget(0, QtWidgets.QFormLayout.ItemRole.LabelRole, self.label)
-        self.CodeLineEdit = QtWidgets.QLineEdit(parent=self.formLayoutWidget)
-        self.CodeLineEdit.setObjectName("CodeLineEdit")
-        self.formLayout.setWidget(0, QtWidgets.QFormLayout.ItemRole.FieldRole, self.CodeLineEdit)
-        self.label_2 = QtWidgets.QLabel(parent=LoginForm)
-        self.label_2.setGeometry(QtCore.QRect(160, 20, 121, 31))
-        font = QtGui.QFont()
-        font.setFamily("Academy Engraved LET")
-        font.setPointSize(24)
-        self.label_2.setFont(font)
-        self.label_2.setObjectName("label_2")
-        self.loginButton = QtWidgets.QPushButton(parent=LoginForm)
-        self.loginButton.setGeometry(QtCore.QRect(320, 65, 71, 31))
-        self.loginButton.setObjectName("loginButton")
-
-        self.retranslateUi(LoginForm)
-        QtCore.QMetaObject.connectSlotsByName(LoginForm)
+        # 创建主布局
+        self.mainLayout = QVBoxLayout(LoginForm)
+        self.mainLayout.setContentsMargins(0, 0, 0, 0)
+        self.mainLayout.setSpacing(0)
+        
+        # 创建标题区域
+        self.headerFrame = QFrame(LoginForm)
+        self.headerFrame.setObjectName("headerFrame")
+        self.headerFrame.setMinimumHeight(60)
+        self.headerLayout = QVBoxLayout(self.headerFrame)
+        self.headerLayout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # 标题标签
+        self.titleLabel = QtWidgets.QLabel("良匠工具箱", self.headerFrame)
+        self.titleLabel.setObjectName("titleLabel")
+        self.titleLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # 设置标题字体
+        titleFont = QFont()
+        if sys.platform == 'darwin':
+            titleFont.setFamily("Helvetica Neue")
+        else:
+            titleFont.setFamily("Segoe UI Light")
+        titleFont.setPointSize(24)
+        self.titleLabel.setFont(titleFont)
+        
+        self.headerLayout.addWidget(self.titleLabel)
+        self.mainLayout.addWidget(self.headerFrame)
+        
+        # 创建内容区域
+        self.contentFrame = QFrame(LoginForm)
+        self.contentFrame.setObjectName("contentFrame")
+        self.contentLayout = QVBoxLayout(self.contentFrame)
+        self.contentLayout.setContentsMargins(20, 20, 20, 20)
+        
+        # 创建表单布局
+        self.formLayout = QGridLayout()
+        self.formLayout.setContentsMargins(0, 0, 0, 0)
+        self.formLayout.setSpacing(10)
+        
+        # 卡密标签和输入框
+        self.codeLabel = QtWidgets.QLabel("请输入卡密：", self.contentFrame)
+        self.CodeLineEdit = QtWidgets.QLineEdit(self.contentFrame)
+        self.CodeLineEdit.setPlaceholderText("输入卡密进行登录")
+        self.CodeLineEdit.setClearButtonEnabled(True)
+        
+        # 登录按钮
+        self.loginButton = QtWidgets.QPushButton("登录", self.contentFrame)
+        
+        # 添加到表单布局
+        self.formLayout.addWidget(self.codeLabel, 0, 0)
+        self.formLayout.addWidget(self.CodeLineEdit, 0, 1)
+        self.formLayout.addWidget(self.loginButton, 0, 2)
+        
+        # 设置列的拉伸因子
+        self.formLayout.setColumnStretch(0, 1)  # 标签列
+        self.formLayout.setColumnStretch(1, 3)  # 输入框列
+        self.formLayout.setColumnStretch(2, 1)  # 按钮列
+        
+        # 添加表单布局到内容布局
+        self.contentLayout.addLayout(self.formLayout)
+        
+        # 添加内容区域到主布局
+        self.mainLayout.addWidget(self.contentFrame)
+        self.mainLayout.setStretch(0, 1)  # 标题区域
+        self.mainLayout.setStretch(1, 2)  # 内容区域
         
         # 设置回车键触发登录
         self.CodeLineEdit.returnPressed.connect(self.login)
+        
+        # 设置对象名称
+        LoginForm.setObjectName("LoginForm")
+        self.CodeLineEdit.setObjectName("CodeLineEdit")
+        self.loginButton.setObjectName("loginButton")
+        self.codeLabel.setObjectName("codeLabel")
 
     def retranslateUi(self, LoginForm):
         _translate = QtCore.QCoreApplication.translate
         LoginForm.setWindowTitle(_translate("LoginForm", "良匠工具箱 - 登录"))
-        self.label.setText(_translate("LoginForm", "请输入卡密："))
-        self.label_2.setText(_translate("LoginForm", "良匠工具箱"))
+        self.codeLabel.setText(_translate("LoginForm", "请输入卡密："))
+        self.titleLabel.setText(_translate("LoginForm", "良匠工具箱"))
         self.loginButton.setText(_translate("LoginForm", "登录"))
 
     def get_db_connection(self):
@@ -426,8 +532,17 @@ class Ui_LoginForm(QWidget):
             QMessageBox.warning(self, "登录失败", "请输入卡密！")
             return
         
+        # 显示加载状态
+        self.loginButton.setEnabled(False)
+        self.loginButton.setText("验证中...")
+        QtWidgets.QApplication.processEvents()
+        
         # 验证卡密
         is_valid, message = self.validate_code(entered_password)
+        
+        # 恢复按钮状态
+        self.loginButton.setEnabled(True)
+        self.loginButton.setText("登录")
         
         if is_valid:
             # 密码正确，保存卡密

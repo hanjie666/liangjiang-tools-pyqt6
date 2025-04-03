@@ -10,6 +10,8 @@ import traceback
 import shutil
 import glob
 import time
+import json
+import types
 
 # 确定是否是打包后的应用
 is_frozen = getattr(sys, 'frozen', False)
@@ -56,7 +58,7 @@ else:
 if application_path not in sys.path:
     sys.path.insert(0, application_path)
 
-# 只在开发环境中使用main目录
+# 处理main目录路径
 main_path = os.path.join(application_path, 'main')
 if not is_frozen:
     # 在开发环境中，确保main目录存在并添加到路径
@@ -75,6 +77,9 @@ if not is_frozen:
 else:
     # 在打包环境中，不需要创建main目录，直接从内部资源加载
     log_message(f"打包环境: 将从内部资源加载模块")
+    # 但仍将main路径添加到Python路径，以便importlib可以找到模块
+    if main_path not in sys.path:
+        sys.path.insert(0, main_path)
 
 # 导入PyQt6
 try:
@@ -99,6 +104,74 @@ def show_error(title, message):
         log_message(f"显示错误对话框失败: {e}")
         print(f"错误: {title}\n{message}")
 
+# 在打包环境中提取模块文件
+def extract_module_file(module_name):
+    """从打包环境中提取模块文件"""
+    if not is_frozen:
+        return None
+    
+    # 源文件路径（在打包文件内部）
+    source_path = f"main/{module_name}.py"
+    
+    # 目标文件路径（在临时目录中）
+    temp_dir = os.path.join(application_path, "temp")
+    os.makedirs(temp_dir, exist_ok=True)
+    target_path = os.path.join(temp_dir, f"{module_name}.py")
+    
+    try:
+        # 从打包文件中提取模块文件
+        from importlib.resources import files, as_file
+        resource_path = files('main').joinpath(f"{module_name}.py")
+        with as_file(resource_path) as extracted_file:
+            with open(target_path, 'wb') as f:
+                with open(extracted_file, 'rb') as source:
+                    f.write(source.read())
+        
+        log_message(f"从打包环境提取模块文件: {source_path} -> {target_path}")
+        return target_path
+    except Exception as e:
+        log_message(f"从打包环境提取模块文件失败: {e}")
+        log_message(traceback.format_exc())
+        
+        # 尝试使用备用方法提取
+        try:
+            # 检查是否可以直接访问文件系统
+            from PyInstaller import compat
+            from PyInstaller.archive.readers import CArchiveReader
+            
+            # 获取打包文件路径
+            executable = sys.executable
+            
+            # 尝试从打包文件中读取数据
+            archive = CArchiveReader(executable)
+            data = archive.extract(f"main/{module_name}.py")[1]
+            
+            # 将数据写入临时文件
+            with open(target_path, 'wb') as f:
+                f.write(data)
+            
+            log_message(f"使用备用方法从打包环境提取模块文件: {source_path} -> {target_path}")
+            return target_path
+        except Exception as e2:
+            log_message(f"备用方法提取模块文件失败: {e2}")
+            log_message(traceback.format_exc())
+            
+            # 最后尝试直接从resources目录读取文件
+            try:
+                # 直接复制打包时添加的数据文件
+                source_in_pkg = os.path.join(application_path, source_path)
+                if os.path.exists(source_in_pkg):
+                    with open(source_in_pkg, 'rb') as src, open(target_path, 'wb') as dst:
+                        dst.write(src.read())
+                    log_message(f"从打包路径直接复制模块文件: {source_in_pkg} -> {target_path}")
+                    return target_path
+                else:
+                    log_message(f"模块文件在打包路径中不存在: {source_in_pkg}")
+            except Exception as e3:
+                log_message(f"直接复制模块文件失败: {e3}")
+            
+            return None
+
 # 创建占位符模块的函数
 def create_placeholder_module(module_name):
     """创建占位符模块"""
@@ -113,19 +186,49 @@ def create_placeholder_module(module_name):
                     self.app = QtWidgets.QApplication(sys.argv)
                 
             def show(self):
-                QMessageBox.critical(None, "模块错误", "找不到登录模块。\n请联系开发者获取帮助。")
+                QMessageBox.critical(None, "模块错误", f"找不到登录模块 {module_name}。\n请联系开发者获取帮助。")
                 sys.exit(1)
         
         return type('PlaceholderModule', (), {'Ui_LoginForm': PlaceholderLoginForm})
     
     elif module_name == "dc-chat":
-        # 创建一个空的dc-chat模块
-        return type('PlaceholderModule', (), {})
+        # 创建一个简单的dc-chat模块
+        class PlaceholderChatForm:
+            def __init__(self):
+                self.app = QtWidgets.QApplication.instance()
+                if not self.app:
+                    self.app = QtWidgets.QApplication(sys.argv)
+                
+            def show(self):
+                QMessageBox.critical(None, "模块错误", f"找不到DC-Chat模块 {module_name}。\n请联系开发者获取帮助。")
+                
+        return type('PlaceholderModule', (), {'Ui_Form': PlaceholderChatForm})
     
     return None
 
+def load_module_from_code(module_name, module_code):
+    """从字符串代码加载模块"""
+    log_message(f"从代码加载模块: {module_name}")
+    
+    try:
+        # 创建一个新的模块对象
+        module = types.ModuleType(module_name)
+        
+        # 将模块添加到sys.modules
+        sys.modules[module_name] = module
+        
+        # 编译并执行代码
+        exec(module_code, module.__dict__)
+        
+        log_message(f"成功从代码加载模块: {module_name}")
+        return module
+    except Exception as e:
+        log_message(f"从代码加载模块失败: {module_name} - {e}")
+        log_message(traceback.format_exc())
+        return None
+
 def load_module_from_file(module_name, file_path):
-    """从文件加载模块（开发环境）"""
+    """从文件加载模块（开发环境或提取的文件）"""
     log_message(f"从文件加载模块: {module_name} - {file_path}")
     
     try:
@@ -167,6 +270,12 @@ def find_and_load_module(module_name):
                         return login
                     except ImportError as e2:
                         log_message(f"使用importlib导入login模块失败: {e2}")
+                        
+                        # 尝试从打包环境提取并加载模块文件
+                        extracted_path = extract_module_file(module_name)
+                        if extracted_path and os.path.exists(extracted_path):
+                            return load_module_from_file(module_name, extracted_path)
+                        
                         return create_placeholder_module("login")
             elif module_name == "dc-chat":
                 try:
@@ -175,17 +284,51 @@ def find_and_load_module(module_name):
                     dc_chat = importlib.import_module("dc-chat")
                     log_message(f"成功导入dc-chat模块")
                     return dc_chat
-                except ImportError:
-                    log_message(f"导入dc-chat模块失败，创建占位符")
+                except ImportError as e:
+                    log_message(f"导入dc-chat模块失败: {e}")
+                    
+                    # 尝试使用连字符替换后的模块名
+                    try:
+                        dc_chat = importlib.import_module("dc_chat")
+                        log_message(f"使用替换连字符后的名称导入dc_chat模块成功")
+                        return dc_chat
+                    except ImportError as e2:
+                        log_message(f"使用替换连字符后的名称导入dc_chat模块失败: {e2}")
+                    
+                    # 尝试从打包环境提取并加载模块文件
+                    extracted_path = extract_module_file(module_name)
+                    if extracted_path and os.path.exists(extracted_path):
+                        return load_module_from_file(module_name.replace('-', '_'), extracted_path)
+                    
+                    log_message(f"创建dc-chat占位符模块")
                     return create_placeholder_module("dc-chat")
             else:
                 # 其他模块
-                module = __import__(module_name)
-                log_message(f"成功导入模块: {module_name}")
-                return module
+                try:
+                    module = __import__(module_name)
+                    log_message(f"成功导入模块: {module_name}")
+                    return module
+                except Exception as e:
+                    log_message(f"导入模块失败: {module_name} - {e}")
+                    
+                    # 尝试从打包环境提取并加载模块文件
+                    extracted_path = extract_module_file(module_name)
+                    if extracted_path and os.path.exists(extracted_path):
+                        return load_module_from_file(module_name, extracted_path)
+                    
+                    # 创建占位符模块
+                    return create_placeholder_module(module_name)
         except Exception as e:
-            # 如果导入失败，创建一个占位符模块
-            log_message(f"导入模块失败，创建占位符: {module_name} - {e}")
+            # 如果导入失败，尝试从打包文件数据中提取模块
+            log_message(f"导入模块时发生异常: {module_name} - {e}")
+            
+            # 尝试从打包环境提取并加载模块文件
+            extracted_path = extract_module_file(module_name)
+            if extracted_path and os.path.exists(extracted_path):
+                return load_module_from_file(module_name, extracted_path)
+            
+            # 如果提取失败，创建一个占位符模块
+            log_message(f"创建占位符模块: {module_name}")
             return create_placeholder_module(module_name)
     else:
         # 在开发环境中，从文件加载

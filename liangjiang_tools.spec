@@ -16,10 +16,15 @@ if os.path.exists('view'):
 all_datas = [
     # 只包含UI文件和其他资源，不包含Python源代码
     ('view/*.ui', 'view'),        # 包含UI文件
+    ('config.json', '.'),         # 包含配置文件
+    ('app_icon.ico', '.'),        # 包含图标文件
 ]
 
 # 添加UI文件
 all_datas.extend(resource_files)
+
+# 添加main目录的模块作为二进制文件
+binaries = []
 
 a = Analysis(
     ['main.py'],  # Main script to execute
@@ -28,7 +33,7 @@ a = Analysis(
         os.path.abspath('./main'),
         os.path.abspath('./view'),
     ],
-    binaries=[],
+    binaries=binaries,
     datas=all_datas,
     hiddenimports=[
         'pymysql', 
@@ -47,8 +52,12 @@ a = Analysis(
         'shutil',
         'glob',
         'time',
-        'login',  # 添加login模块作为隐藏导入
-        'dc-chat',  # 添加dc-chat模块作为隐藏导入
+        'login',           # 添加login模块作为隐藏导入
+        'dc-chat',         # 添加dc-chat模块作为隐藏导入
+        'requests',        # 添加requests模块
+        'threading',       # 添加threading模块
+        'random',          # 添加random模块
+        'main',            # 添加main模块自身
     ],
     hookspath=[],
     hooksconfig={},
@@ -59,6 +68,10 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+
+# 将模块文件直接添加到打包文件中
+a.datas += [('main/dc-chat.py', os.path.join(os.path.abspath('./main'), 'dc-chat.py'), 'DATA')]
+a.datas += [('main/login.py', os.path.join(os.path.abspath('./main'), 'login.py'), 'DATA')]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

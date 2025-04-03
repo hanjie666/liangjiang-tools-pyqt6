@@ -16,11 +16,12 @@ import traceback
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtWidgets import QWidget, QMessageBox
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 
 # 创建一个信号类，用于线程安全地更新UI
 class LogSignals(QObject):
     log_signal = pyqtSignal(str)
+    mention_detected_signal = pyqtSignal()  # 添加被@检测信号
 
 
 class Ui_Form(QWidget):
@@ -31,6 +32,7 @@ class Ui_Form(QWidget):
         # 创建信号对象
         self.signals = LogSignals()
         self.signals.log_signal.connect(self.update_log)
+        self.signals.mention_detected_signal.connect(self.stop_on_mention_detected)  # 连接被@检测信号
         
         # 配置文件路径
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -79,9 +81,13 @@ class Ui_Form(QWidget):
         self.lineEdit.textChanged.connect(self.save_config)  # DC TOKEN
         self.lineEdit_2.textChanged.connect(self.save_config)  # DC 频道
         self.lineEdit_3.textChanged.connect(self.save_config)  # API KEY
-        self.lineEdit_4.textChanged.connect(self.save_config)  # 延时最小值
-        self.lineEdit_5.textChanged.connect(self.save_config)  # 延时最大值
-        self.comboBox_language.currentIndexChanged.connect(self.save_config)  # 回复语言
+        self.lineEdit_user_id.textChanged.connect(self.save_config)  # 用户ID
+        self.lineEdit_push_key.textChanged.connect(self.save_config)  # Push Key
+        self.lineEdit_4.textChanged.connect(self.save_config)  # 最小延时
+        self.lineEdit_5.textChanged.connect(self.save_config)  # 最大延时
+        self.comboBox_language.currentIndexChanged.connect(self.save_config)  # 语言选择
+        self.checkBox_stop_on_mention.toggled.connect(self.save_config)  # 被@时停止选项
+        self.checkBox_notify_on_mention.toggled.connect(self.save_config)  # 被@时通知选项
         
         # 连接按钮事件
         self.pushButton_2.clicked.connect(self.start_bot)  # 开始按钮
@@ -134,6 +140,42 @@ class Ui_Form(QWidget):
         self.lineEdit_3 = QtWidgets.QLineEdit()
         self.lineEdit_3.setObjectName("lineEdit_3")
         self.formLayout.addRow(self.label_3, self.lineEdit_3)
+        
+        # 用户ID
+        self.label_user_id = QtWidgets.QLabel()
+        self.label_user_id.setObjectName("label_user_id")
+        self.label_user_id.setMinimumWidth(80)
+        self.lineEdit_user_id = QtWidgets.QLineEdit()
+        self.lineEdit_user_id.setObjectName("lineEdit_user_id")
+        self.lineEdit_user_id.setPlaceholderText("可选，用于检测是否有人@你")
+        self.formLayout.addRow(self.label_user_id, self.lineEdit_user_id)
+        
+        # Push Key
+        self.label_push_key = QtWidgets.QLabel()
+        self.label_push_key.setObjectName("label_push_key")
+        self.label_push_key.setMinimumWidth(80)
+        self.lineEdit_push_key = QtWidgets.QLineEdit()
+        self.lineEdit_push_key.setObjectName("lineEdit_push_key")
+        self.lineEdit_push_key.setPlaceholderText("PushMe通知Key，可选")
+        self.formLayout.addRow(self.label_push_key, self.lineEdit_push_key)
+        
+        # 被@时停止脚本选项
+        self.label_stop_on_mention = QtWidgets.QLabel()
+        self.label_stop_on_mention.setObjectName("label_stop_on_mention")
+        self.label_stop_on_mention.setMinimumWidth(80)
+        self.checkBox_stop_on_mention = QtWidgets.QCheckBox()
+        self.checkBox_stop_on_mention.setObjectName("checkBox_stop_on_mention")
+        self.checkBox_stop_on_mention.setChecked(True)  # 默认选中
+        self.formLayout.addRow(self.label_stop_on_mention, self.checkBox_stop_on_mention)
+        
+        # 被@时发送通知选项
+        self.label_notify_on_mention = QtWidgets.QLabel()
+        self.label_notify_on_mention.setObjectName("label_notify_on_mention")
+        self.label_notify_on_mention.setMinimumWidth(80)
+        self.checkBox_notify_on_mention = QtWidgets.QCheckBox()
+        self.checkBox_notify_on_mention.setObjectName("checkBox_notify_on_mention")
+        self.checkBox_notify_on_mention.setChecked(True)  # 默认选中
+        self.formLayout.addRow(self.label_notify_on_mention, self.checkBox_notify_on_mention)
         
         # 回复语言
         self.label_6 = QtWidgets.QLabel()
@@ -204,6 +246,12 @@ class Ui_Form(QWidget):
         self.label.setText(_translate("Form", "DC TOKEN："))
         self.label_2.setText(_translate("Form", "DC 频道："))
         self.label_3.setText(_translate("Form", "API KEY："))
+        self.label_user_id.setText(_translate("Form", "用户ID："))
+        self.label_push_key.setText(_translate("Form", "Push Key："))
+        self.label_stop_on_mention.setText(_translate("Form", "被@时停止："))
+        self.checkBox_stop_on_mention.setText(_translate("Form", "启用"))
+        self.label_notify_on_mention.setText(_translate("Form", "被@时通知："))
+        self.checkBox_notify_on_mention.setText(_translate("Form", "启用"))
         self.label_4.setText(_translate("Form", "延时（秒）："))
         self.label_5.setText(_translate("Form", "-"))
         self.label_6.setText(_translate("Form", "回复语言："))
@@ -221,8 +269,16 @@ class Ui_Form(QWidget):
                     self.lineEdit.setText(config.get('dc_token', ''))
                     self.lineEdit_2.setText(config.get('dc_channel', ''))
                     self.lineEdit_3.setText(config.get('api_key', ''))
+                    self.lineEdit_user_id.setText(config.get('user_id', ''))
+                    self.lineEdit_push_key.setText(config.get('push_key', ''))
                     self.lineEdit_4.setText(config.get('delay_min', '300'))
                     self.lineEdit_5.setText(config.get('delay_max', '350'))
+                    
+                    # 设置被@时停止选项
+                    self.checkBox_stop_on_mention.setChecked(config.get('stop_on_mention', True))
+                    
+                    # 设置被@时通知选项
+                    self.checkBox_notify_on_mention.setChecked(config.get('notify_on_mention', True))
                     
                     # 设置语言选择
                     language_index = config.get('language_index', 0)  # 默认中文
@@ -238,9 +294,13 @@ class Ui_Form(QWidget):
             'dc_token': self.lineEdit.text(),
             'dc_channel': self.lineEdit_2.text(),
             'api_key': self.lineEdit_3.text(),
+            'user_id': self.lineEdit_user_id.text(),
+            'push_key': self.lineEdit_push_key.text(),
             'delay_min': self.lineEdit_4.text(),
             'delay_max': self.lineEdit_5.text(),
-            'language_index': self.comboBox_language.currentIndex()
+            'language_index': self.comboBox_language.currentIndex(),
+            'stop_on_mention': self.checkBox_stop_on_mention.isChecked(),
+            'notify_on_mention': self.checkBox_notify_on_mention.isChecked()
         }
         
         try:
@@ -267,15 +327,44 @@ class Ui_Form(QWidget):
             time.sleep(0.5)
         event.accept()
     
+    def send_push_notification(self, title, content):
+        """发送PushMe通知"""
+        push_key = self.lineEdit_push_key.text()
+        if not push_key:
+            self.log_message("Push Key 为空，无法发送通知")
+            return False
+        
+        try:
+            url = "https://push.i-i.me"
+            data = {
+                'push_key': push_key,
+                'title': title,
+                'content': content
+            }
+            
+            # 添加超时设置
+            response = requests.post(url, data=data, timeout=10)
+            
+            if response.status_code == 200:
+                self.log_message(f"PushMe通知发送成功: {title}")
+                return True
+            else:
+                self.log_message(f"PushMe通知发送失败: {response.status_code} - {response.text}")
+                return False
+        except Exception as e:
+            self.log_message(f"PushMe通知发送错误: {str(e)}")
+            return False
+    
     def get_messages(self):
         """获取Discord频道消息"""
         try:
             discord_token = self.lineEdit.text()
             channel_id = self.lineEdit_2.text()
+            user_id = self.lineEdit_user_id.text()  # 获取用户ID
             
             if not discord_token or not channel_id:
                 self.log_message("Discord Token 或频道 ID 为空")
-                return []
+                return [], False
             
             url = f"https://discord.com/api/v10/channels/{channel_id}/messages?limit=20"
             headers = {"Authorization": discord_token}
@@ -285,9 +374,33 @@ class Ui_Form(QWidget):
             
             if response.status_code == 200:
                 data = response.json()
+                was_mentioned = False
+                mention_info = {'was_mentioned': False, 'author': '', 'content': ''}
+                
+                # 检查是否有人@了用户
+                if user_id:
+                    for msg in data:
+                        # 检查mentions数组中是否包含用户ID
+                        if 'mentions' in msg and any(mention.get('id') == user_id for mention in msg.get('mentions', [])):
+                            mention_author = msg.get('author', {}).get('global_name') or msg.get('author', {}).get('username')
+                            mention_content = msg.get('content', '')
+                            self.log_message(f"⚠️ 检测到 {mention_author} @了你！消息内容: {mention_content}")
+                            
+                            # 发送PushMe通知
+                            if self.checkBox_notify_on_mention.isChecked():
+                                notification_title = f"Discord: {mention_author} @了你"
+                                self.send_push_notification(notification_title, f"消息内容: {mention_content}")
+                            
+                            was_mentioned = True
+                            mention_info = {
+                                'was_mentioned': True,
+                                'author': mention_author,
+                                'content': mention_content
+                            }
+                
                 # 过滤消息内容，排除包含特定字符的消息
                 messages = [msg["content"] for msg in data if not any(char in msg["content"] for char in "<>@http?0x")]
-                return messages
+                return messages, was_mentioned
             else:
                 error_msg = f"获取消息失败: {response.status_code}"
                 if response.status_code == 401:
@@ -295,18 +408,18 @@ class Ui_Form(QWidget):
                 elif response.status_code == 404:
                     error_msg += " - 频道 ID 可能无效"
                 self.log_message(error_msg)
-                return []
+                return [], False
         except requests.exceptions.Timeout:
             self.log_message("获取消息超时，请检查网络连接")
-            return []
+            return [], False
         except requests.exceptions.ConnectionError:
             self.log_message("网络连接错误，请检查网络连接")
-            return []
+            return [], False
         except Exception as e:
             self.log_message(f"请求错误: {str(e)}")
             # 记录详细错误信息
             traceback.print_exc()
-            return []
+            return [], False
     
     def generate_response(self, messages):
         """使用AI生成回复"""
@@ -431,6 +544,12 @@ class Ui_Form(QWidget):
             self.log_message("延时设置错误，使用默认值")
             return random.randint(300, 350)
     
+    @QtCore.pyqtSlot()
+    def stop_on_mention_detected(self):
+        """当检测到被@时停止机器人的槽函数"""
+        self.log_message("执行被@停止操作")
+        self.stop_bot()
+    
     def bot_loop(self):
         """机器人主循环"""
         self.log_message("机器人已启动")
@@ -438,7 +557,21 @@ class Ui_Form(QWidget):
         while self.running:
             try:
                 # 获取消息
-                messages = self.get_messages()
+                messages, was_mentioned = self.get_messages()
+                
+                # 如果被@且启用了停止选项，则停止机器人
+                if was_mentioned:
+                    # 发送"童子"消息到PushMe
+                    if self.checkBox_notify_on_mention.isChecked() and self.lineEdit_push_key.text():
+                        self.send_push_notification("发财啦发财啦", "有人@你啦，速速查看")
+                        self.log_message("已发送通知到PushMe")
+                    
+                    # 如果启用了停止选项，停止机器人
+                    if self.checkBox_stop_on_mention.isChecked():
+                        self.log_message("⚠️ 检测到被@且已启用停止选项，停止机器人运行")
+                        # 发送信号到主线程停止机器人
+                        self.signals.mention_detected_signal.emit()
+                        break
                 
                 if not self.running:  # 检查是否在获取消息期间被停止
                     break
@@ -459,9 +592,14 @@ class Ui_Form(QWidget):
                         if not self.running:  # 检查是否在发送消息期间被停止
                             break
                         
-                        # 随机延迟
-                        delay = self.get_random_delay()
-                        self.log_message(f"等待 {delay} 秒...")
+                        # 如果被@了，减少延迟时间以更快响应
+                        if was_mentioned:
+                            delay = random.randint(5, 15)  # 被@时使用较短的延迟
+                            self.log_message(f"检测到被@，快速响应，等待 {delay} 秒...")
+                        else:
+                            # 正常随机延迟
+                            delay = self.get_random_delay()
+                            self.log_message(f"等待 {delay} 秒...")
                         
                         # 分段睡眠，每5秒检查一次是否应该停止
                         for _ in range(delay // 5):
